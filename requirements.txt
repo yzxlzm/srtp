@@ -1,0 +1,37 @@
+# Web 框架
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+
+# LangChain 核心库
+langchain==0.3.0
+langchain-core==0.3.0
+langchain-community==0.3.0
+langchain-openai==0.3.0
+langchain-text-splitters==0.3.0
+
+# 向量数据库
+faiss-cpu==1.7.4
+
+# 知识图谱
+networkx>=3.0
+
+# Neo4j（GraphRAG 落库与查询）
+neo4j>=5.16.0
+
+# 文档处理
+python-docx==1.1.0
+lxml>=4.9.0
+
+# 模型和嵌入
+sentence-transformers==2.2.2
+transformers==4.35.2
+
+# 配置和工具
+python-dotenv==1.0.0
+pydantic==1.10.11
+requests==2.31.0
+
+# 可选：用于本地推理（如果只使用 CPU，可以注释掉）
+# accelerate==0.22.0
+# torch==2.2.2
+

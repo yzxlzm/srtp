@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduMate 智能助手</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]'], ['[', ']']]
+            },
+            startup: {
+                pageReady: () => {
+                    return MathJax.startup.defaultPageReady();
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+
+        @keyframes slideUpFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .message-enter { animation: slideUpFade 0.3s ease-out forwards; }
+
+        @keyframes userMessagePop {
+            0% { opacity: 0; transform: scale(0.9) translateY(15px); transform-origin: bottom right; }
+            60% { opacity: 1; transform: scale(1.02) translateY(-2px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); transform-origin: bottom right; }
+        }
+        .msg-user-anim { animation: userMessagePop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+        .typing-dot { animation: typingWave 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typingWave { 0%, 80%, 100% { transform: scale(0); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .prose { max-width: none; font-size: 0.9375rem; line-height: 1.6; }
+        .prose p { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .prose pre { padding: 0.875rem; border-radius: 0.5rem; margin-top: 0.75rem; margin-bottom: 0.75rem; background-color: #1e293b; color: #f8fafc; overflow-x: auto;}
+        .prose code { font-size: 0.875em; padding: 0.15rem 0.3rem; border-radius: 0.25rem; background-color: #f1f5f9; color: #ef4444; font-weight: 500;}
+        .prose pre code { background-color: transparent; color: inherit; padding: 0; }
+        .prose ul, .prose ol { margin-top: 0.5rem; margin-bottom: 0.5rem; padding-left: 1.25rem; }
+        .prose li { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+
+        /* 数学公式样式优化 */
+        mjx-container { margin: 0.75rem 0 !important; }
+        mjx-container[display="true"] { margin: 1rem 0 !important; }
+        .MathJax { font-size: 108% !important; }
+        mjx-math { color: #1e293b !important; }
+        
+        #auth-overlay { backdrop-filter: blur(8px); }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen flex overflow-hidden text-slate-800 antialiased">
+
+    <div id="auth-overlay" class="fixed inset-0 z-[100] bg-slate-900/40 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <h2 id="auth-title" class="text-2xl font-bold mb-6 text-center text-slate-800">登录 EduMate</h2>
+            <div class="space-y-4">
+                <input type="text" id="auth-username" placeholder="用户名" class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                <input type="password" id="auth-password" placeholder="密码" class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                <button onclick="handleAuth()" id="auth-submit-btn" class="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition">进入系统</button>
+                <p class="text-center text-sm text-slate-500">
+                    <span id="auth-switch-text">还没有账号？</span>
+                    <button onclick="toggleAuthMode()" class="text-indigo-600 font-semibold" id="auth-switch-btn">立即注册</button>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <aside id="sidebar" class="w-64 bg-white border-r border-slate-100 flex flex-col flex-shrink-0 z-20 transition-all">
+        <div class="h-16 flex items-center justify-between px-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow">
+                    <i data-lucide="brain-circuit" class="text-white w-5 h-5"></i>
+                </div>
+                <span class="font-bold text-lg text-slate-950">EduMate AI</span>
+            </div>
+            <button onclick="toggleSidebar()" class="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                <i data-lucide="panel-left-close" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <div class="p-3">
+            <button onclick="createNewChat()" class="w-full flex items-center justify-between gap-2.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-sm shadow-indigo-100 transition">
+                <span>新建会话</span>
+                <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1 flex flex-col" id="history-list">
+            <div class="px-3 pt-2 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">历史会话</div>
+            <div id="history-items-container" class="space-y-1"></div>
+        </nav>
+
+        <div class="p-4 border-t border-slate-100 bg-slate-50/50 mt-auto">
+            <div class="flex items-center gap-3">
+                <img id="user-avatar" src="https://api.dicebear.com/8.x/notionists/svg?seed=Felix" alt="User" class="w-10 h-10 rounded-full border-2 border-white shadow-sm">
+                <div class="flex-1 truncate">
+                    <div id="display-username" class="font-semibold text-sm truncate">未登录</div>
+                    <div class="text-[11px] text-slate-500">Student</div>
+                </div>
+                <button onclick="logout()" title="退出登录" class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col h-full min-w-0 bg-slate-50 relative">
+        <header class="h-16 flex items-center justify-between px-4 md:px-6 bg-white border-b border-slate-100 z-10 sticky top-0">
+            <div class="flex items-center gap-2 max-w-[30%]">
+                <button id="sidebar-toggle-btn" onclick="toggleSidebar()" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl hidden">
+                    <i data-lucide="panel-left-open" class="w-5 h-5"></i>
+                </button>
+                <h1 class="text-base font-semibold text-slate-800 truncate" id="current-chat-title">新会话</h1>
+            </div>
+
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200/50 overflow-x-auto hide-scrollbar">
+                <button onclick="selectModel('auto')" id="model-auto" class="model-btn px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition active-model bg-white text-indigo-700 shadow font-medium whitespace-nowrap">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>自动选择
+                </button>
+                <button onclick="selectModel('deepseek')" id="model-deepseek" class="model-btn px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition hover:bg-white/50 text-slate-600 whitespace-nowrap">
+                    <i data-lucide="box" class="w-4 h-4"></i>DeepSeek
+                </button>
+                <button onclick="selectModel('qwen')" id="model-qwen" class="model-btn px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition hover:bg-white/50 text-slate-600 whitespace-nowrap">
+                    <i data-lucide="box" class="w-4 h-4"></i>Qwen
+                </button>
+                <button onclick="selectModel('GPT')" id="model-GPT" class="model-btn px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition hover:bg-white/50 text-slate-600 whitespace-nowrap">
+                    <i data-lucide="box" class="w-4 h-4"></i>GPT
+                </button>
+            </div>
+            
+            <div class="flex items-center gap-2 w-10"></div>
+        </header>
+
+        <main id="chat-container" class="flex-1 overflow-y-auto bg-slate-50 scroll-smooth">
+            <div class="max-w-4xl mx-auto p-4 md:p-6 space-y-6 flex flex-col" id="chat-messages-area">
+                
+                <div class="flex flex-col items-center justify-center text-center pt-12 pb-8 text-slate-500 gap-5" id="welcome-screen">
+                    <div class="w-20 h-20 rounded-3xl bg-indigo-100 flex items-center justify-center shadow-inner border border-indigo-200/50">
+                        <i data-lucide="bot-message-square" class="w-10 h-10 text-indigo-600"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="text-2xl font-bold text-slate-900 tracking-tight">你好！我是你的 EduMate</h2>
+                        <p class="text-base text-slate-500 max-w-lg mx-auto">今天想探讨什么知识？我可以帮你检索文档、解释概念或者编写代码。</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl mt-6">
+                        <button onclick="quickSuggestion('解释什么是 RAG 技术')" class="flex flex-col gap-2 text-left p-4 bg-white rounded-2xl border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/50 transition shadow-sm group">
+                            <i data-lucide="file-search" class="w-5 h-5 text-indigo-500 bg-indigo-50 rounded-md p-0.5"></i>
+                            <span class="font-semibold text-sm text-slate-800">核心概念</span>
+                            <span class="text-xs text-slate-500">解释什么是 检索增强生成 (RAG) 技术？</span>
+                        </button>
+                        <button onclick="quickSuggestion('帮我用 Python 写一个快速排序')" class="flex flex-col gap-2 text-left p-4 bg-white rounded-2xl border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/50 transition shadow-sm group">
+                            <i data-lucide="code-xml" class="w-5 h-5 text-emerald-500 bg-emerald-50 rounded-md p-0.5"></i>
+                            <span class="font-semibold text-sm text-slate-800">代码生成</span>
+                            <span class="text-xs text-slate-500">帮我用 Python 写一个快速排序算法。</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="h-32 flex-shrink-0" id="bottom-spacer"></div>
+            </div>
+        </main>
+
+        <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-6 z-10 pointer-events-none">
+            <div class="max-w-4xl mx-auto relative flex items-end bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] border border-slate-200/70 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-100 transition-all duration-300 overflow-hidden pointer-events-auto">
+                <textarea id="user-input" rows="1" placeholder="问我任何问题... (Shift+Enter 换行)" class="flex-1 max-h-32 py-4 px-5 bg-transparent border-none focus:outline-none resize-none text-slate-800 leading-relaxed text-[15px] placeholder:text-slate-400"></textarea>
+                <div class="p-2 flex-shrink-0">
+                    <button id="send-btn" class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center transition-all disabled:bg-slate-100 disabled:text-slate-300 hover:bg-indigo-700 disabled:cursor-not-allowed" disabled>
+                        <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="text-center mt-2 text-[11px] text-slate-400 font-medium pointer-events-auto">
+                当前选择模型: <span id="current-model-name-display" class="text-slate-500">自动选择</span> | AI 可能会犯错
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        marked.setOptions({ breaks: true, gfm: true });
+
+        // 从 FastAPI 根路径打开时用同源；本地 file:// 打开时回落到默认后端地址
+        const API_BASE_URL = (() => {
+            if (typeof window === 'undefined') return 'http://127.0.0.1:8000';
+            if (window.location.protocol === 'file:') return 'http://127.0.0.1:8000';
+            return window.location.origin;
+        })();
+
+        /** 前端筛选按钮 -> 后端 llm.MODEL_SELECTOR / query 使用的 model key */
+        function uiModelToBackend(ui) {
+            if (!ui || ui === 'auto') return null;
+            const map = {
+                deepseek: 'deepseek-chat',
+                qwen: 'qwen_lora',
+                GPT: 'openai-gpt-4o-mini',
+            };
+            return map[ui] ?? ui;
+        }
+
+        /** 后端返回的 model_used 展示名 */
+        function backendModelToDisplay(key) {
+            if (key == null || key === '') return '自动';
+            const map = {
+                'deepseek-chat': 'DeepSeek',
+                'deepseek-reasoner': 'DeepSeek 推理',
+                'openai-gpt-4o-mini': 'GPT',
+                'openai-gpt-4o': 'GPT-4o',
+                qwen_lora: 'Qwen (本地)',
+            };
+            return map[key] || key;
+        }
+
+        let isLoginMode = true;
+        let token = localStorage.getItem('token');
+        let username = localStorage.getItem('username');
+        let currentModel = 'auto';
+        let isSidebarOpen = true;
+        
+        let chatHistory = JSON.parse(localStorage.getItem(`chatHistory_${username}`)) || []; 
+        let currentChatId = null;
+
+        const authOverlay = document.getElementById('auth-overlay');
+        const displayUsername = document.getElementById('display-username');
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        const currentModelDisplay = document.getElementById('current-model-name-display');
+        const historyContainer = document.getElementById('history-items-container');
+
+        // 预处理数学公式格式
+        function preprocessMath(text) {
+            console.log('原始文本:', text.substring(0, 200));
+
+            // 将 \[ ... \] 转换为 $$ ... $$
+            text = text.replace(/\\\[/g, '$$').replace(/\\\]/g, '$$');
+
+            // 将 \( ... \) 转换为 $ ... $
+            text = text.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
+
+            console.log('处理后文本:', text.substring(0, 200));
+            return text;
+        }
+
+        window.onload = () => {
+            if (!token) {
+                authOverlay.classList.remove('hidden');
+                authOverlay.classList.add('flex');
+            } else {
+                displayUsername.textContent = username || 'User';
+                document.getElementById('user-avatar').src = `https://api.dicebear.com/8.x/notionists/svg?seed=${username || 'Felix'}`;
+                renderHistoryList();
+            }
+        };
+
+        // 【新增】：全局复制功能核心逻辑
+        async function copyToClipboard(text, btnElement) {
+            try {
+                // 调用浏览器原生剪贴板 API
+                await navigator.clipboard.writeText(text);
+                
+                // 成功后的视觉反馈：变成绿色的勾
+                const icon = btnElement.querySelector('i');
+                const originalIcon = icon.getAttribute('data-lucide');
+                icon.setAttribute('data-lucide', 'check');
+                icon.classList.add('text-green-500');
+                lucide.createIcons();
+                
+                // 2 秒后恢复原来的复制图标
+                setTimeout(() => {
+                    icon.setAttribute('data-lucide', originalIcon);
+                    icon.classList.remove('text-green-500');
+                    lucide.createIcons();
+                }, 2000);
+            } catch (err) {
+                console.error('复制失败:', err);
+                alert('您的浏览器不支持一键复制，请手动选中复制。');
+            }
+        }
+
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').textContent = isLoginMode ? '登录 EduMate' : '注册新账号';
+            document.getElementById('auth-switch-text').textContent = isLoginMode ? '还没有账号？' : '已有账号？';
+            document.getElementById('auth-switch-btn').textContent = isLoginMode ? '立即注册' : '返回登录';
+            document.getElementById('auth-submit-btn').textContent = isLoginMode ? '进入系统' : '完成注册';
+        }
+
+        async function handleAuth() {
+            const usernameInput = document.getElementById('auth-username').value.trim();
+            const passwordInput = document.getElementById('auth-password').value.trim();
+            if (!usernameInput || !passwordInput) { alert("请输入用户名和密码！"); return; }
+
+            const endpoint = isLoginMode ? '/login' : '/register';
+            const btn = document.getElementById('auth-submit-btn');
+            const originalText = btn.textContent;
+            btn.textContent = "处理中..."; btn.disabled = true;
+
+            try {
+                const response = await fetch(API_BASE_URL + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: usernameInput, password: passwordInput })
+                });
+                const res = await response.json();
+                const tokenFromBody = res.data && (res.data.token ?? res.data.access_token);
+
+                if (response.ok && res.code === 200 && tokenFromBody) {
+                    token = tokenFromBody;
+                    username = usernameInput;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('username', username);
+                    
+                    authOverlay.classList.remove('flex');
+                    authOverlay.classList.add('hidden');
+                    displayUsername.textContent = username;
+                    document.getElementById('user-avatar').src = `https://api.dicebear.com/8.x/notionists/svg?seed=${username}`;
+                    document.getElementById('auth-password').value = '';
+                    
+                    chatHistory = JSON.parse(localStorage.getItem(`chatHistory_${username}`)) || [];
+                    renderHistoryList();
+                } else {
+                    const msg = Array.isArray(res.detail)
+                        ? res.detail.map((d) => d.msg || d).join('; ')
+                        : (res.detail && (res.detail.msg || res.detail)) || res.message || '认证失败';
+                    alert(msg);
+                }
+            } catch (e) {
+                alert('无法连接到后端服务器，请检查 FastAPI 是否正在运行');
+            } finally {
+                btn.textContent = originalText; btn.disabled = false;
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            location.reload(); 
+        }
+
+        function saveChatsToLocal() {
+            if (username) {
+                localStorage.setItem(`chatHistory_${username}`, JSON.stringify(chatHistory));
+            }
+        }
+
+        function pushMessageToHistory(text, role, model = null) {
+            if (currentChatId === null) {
+                currentChatId = Date.now().toString(); 
+                const title = text.length > 15 ? text.substring(0, 15) + '...' : text;
+                chatHistory.unshift({ id: currentChatId, title: title, messages: [] });
+                document.getElementById('current-chat-title').textContent = title;
+            }
+
+            const chat = chatHistory.find(c => c.id === currentChatId);
+            if (chat) {
+                chat.messages.push({ role: role, content: text, model: model });
+                saveChatsToLocal();
+                renderHistoryList(); 
+            }
+        }
+
+        function renderHistoryList() {
+            historyContainer.innerHTML = '';
+            if (chatHistory.length === 0) {
+                historyContainer.innerHTML = '<div class="px-3 py-4 text-xs text-center text-slate-400">暂无历史会话</div>';
+                return;
+            }
+
+            chatHistory.forEach(chat => {
+                const isActive = chat.id === currentChatId;
+                const a = document.createElement('a');
+                a.href = '#';
+                a.onclick = (e) => { e.preventDefault(); loadHistory(chat.id); };
+                a.className = `group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition cursor-pointer ${
+                    isActive ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-slate-100 text-slate-600'
+                }`;
+                
+                a.innerHTML = `
+                    <i data-lucide="message-square" class="w-4 h-4 flex-shrink-0 ${isActive ? '' : 'text-slate-400'}"></i>
+                    <span class="truncate flex-1">${chat.title}</span>
+                    <button onclick="deleteChat(event, '${chat.id}')" class="hidden group-hover:block p-1 text-slate-400 hover:text-red-500 rounded"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                `;
+                historyContainer.appendChild(a);
+            });
+            lucide.createIcons();
+        }
+
+        function loadHistory(id) {
+            currentChatId = id;
+            const chat = chatHistory.find(c => c.id === id);
+            if (!chat) return;
+
+            document.getElementById('current-chat-title').textContent = chat.title;
+            document.querySelectorAll('.msg-user, .msg-ai').forEach(el => el.remove());
+            if (welcomeScreen) welcomeScreen.style.display = 'none';
+
+            chat.messages.forEach(msg => {
+                if (msg.role === 'user') {
+                    appendStaticUserMessage(msg.content);
+                } else {
+                    appendStaticAIMessage(msg.content, msg.model);
+                }
+            });
+
+            renderHistoryList();
+            scrollToBottom(false);
+
+            // 确保 MathJax 渲染所有公式
+            setTimeout(() => {
+                if (window.MathJax) {
+                    console.log('触发 MathJax 重新渲染');
+                    MathJax.typesetPromise().catch(err => console.error('MathJax 渲染错误:', err));
+                }
+            }, 200);
+        }
+
+        function createNewChat() {
+            currentChatId = null;
+            document.getElementById('current-chat-title').textContent = "新会话";
+            document.querySelectorAll('.msg-user, .msg-ai').forEach(el => el.remove());
+            if (welcomeScreen) welcomeScreen.style.display = 'flex';
+            renderHistoryList(); 
+            userInput.focus();
+        }
+
+        function deleteChat(event, id) {
+            event.stopPropagation(); 
+            if (confirm('确定要删除这条对话吗？')) {
+                chatHistory = chatHistory.filter(c => c.id !== id);
+                saveChatsToLocal();
+                if (currentChatId === id) {
+                    createNewChat(); 
+                } else {
+                    renderHistoryList();
+                }
+            }
+        }
+
+        function toggleSidebar() {
+            isSidebarOpen = !isSidebarOpen;
+            if (isSidebarOpen) {
+                sidebar.classList.remove('-ml-64');
+                sidebarToggleBtn.classList.add('hidden');
+            } else {
+                sidebar.classList.add('-ml-64');
+                sidebarToggleBtn.classList.remove('hidden');
+            }
+        }
+
+        function selectModel(m) {
+            currentModel = m;
+            document.querySelectorAll('.model-btn').forEach(btn => {
+                btn.classList.remove('active-model', 'bg-white', 'text-indigo-700', 'shadow', 'font-medium');
+                btn.classList.add('text-slate-600', 'hover:bg-white/50');
+            });
+            const activeBtn = document.getElementById(`model-${m}`);
+            activeBtn.classList.remove('text-slate-600', 'hover:bg-white/50');
+            activeBtn.classList.add('active-model', 'bg-white', 'text-indigo-700', 'shadow', 'font-medium');
+            
+            // 【新增】：添加了 GPT 到模型名称字典中
+            const modelNames = { 'auto': '自动选择', 'deepseek': 'DeepSeek', 'qwen': 'Qwen', 'GPT': 'GPT' };
+            currentModelDisplay.textContent = modelNames[m];
+            userInput.focus();
+        }
+
+        userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 128) + 'px';
+            sendBtn.disabled = this.value.trim() === '';
+        });
+
+        userInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+
+        function quickSuggestion(text) {
+            userInput.value = text;
+            userInput.style.height = 'auto';
+            userInput.style.height = userInput.scrollHeight + 'px';
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+
+        function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            if (!token) { alert("请先登录！"); authOverlay.classList.remove('hidden'); authOverlay.classList.add('flex'); return; }
+
+            if (welcomeScreen) welcomeScreen.style.display = 'none';
+
+            pushMessageToHistory(text, 'user');
+            appendStaticUserMessage(text);
+            
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            sendBtn.disabled = true;
+
+            fetchAIResponse(text);
+        }
+
+        // ==========================================
+        // 【核心修改】：带有独立工具栏的用户气泡
+        // ==========================================
+        function appendStaticUserMessage(text) {
+            const msgContainer = document.createElement('div');
+            // group 类名用于控制鼠标悬浮时显示底部的工具栏
+            msgContainer.className = "msg-user-anim msg-user group";
+            msgContainer.style.cssText = "display: flex; flex-direction: row; justify-content: flex-end; align-items: flex-start; width: 100%; margin-bottom: 1.5rem;";
+            
+            // 把气泡和工具栏包裹在一个垂直容器中
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = "flex flex-col items-end gap-1.5 max-w-[85%]";
+            
+            // 纯净文本气泡 (保持高度锁定防拉伸)
+            const bubble = document.createElement('div');
+            bubble.style.cssText = "box-sizing: border-box; background-color: #2563eb; color: #ffffff; padding: 10px 18px; border-radius: 20px; border-top-right-radius: 4px; font-size: 15px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; height: auto !important; min-height: 0 !important; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); cursor: default;";
+            bubble.textContent = text;
+            
+            bubble.onmouseenter = () => {
+                bubble.style.transform = "translateY(-2px) scale(1.01)";
+                bubble.style.boxShadow = "0 8px 16px rgba(37, 99, 235, 0.3)";
+            };
+            bubble.onmouseleave = () => {
+                bubble.style.transform = "translateY(0) scale(1)";
+                bubble.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.2)";
+            };
+
+            // 用户工具栏 (默认透明，父级 hover 时渐显)
+            const actionBar = document.createElement('div');
+            actionBar.className = "flex items-center gap-1 text-slate-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100 mr-1";
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = "p-1 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors";
+            copyBtn.title = "复制我的消息";
+            copyBtn.innerHTML = `<i data-lucide="copy" class="w-3.5 h-3.5"></i>`;
+            
+            // 绑定用户文字的复制事件
+            copyBtn.onclick = () => copyToClipboard(text, copyBtn);
+            
+            actionBar.appendChild(copyBtn);
+            contentWrapper.appendChild(bubble);
+            contentWrapper.appendChild(actionBar);
+            msgContainer.appendChild(contentWrapper);
+            
+            chatContainer.querySelector('.max-w-4xl').insertBefore(msgContainer, document.getElementById('bottom-spacer'));
+            lucide.createIcons();
+            scrollToBottom();
+        }
+
+        // ==========================================
+        // 【核心修改】：完善 AI 气泡的全局复制功能
+        // ==========================================
+        function appendStaticAIMessage(text, model) {
+            const aiBubble = createAIMessageSkeleton();
+            aiBubble.loadingDiv.style.display = 'none';
+            aiBubble.textDiv.classList.remove('hidden');
+            if (model) {
+                aiBubble.modelTag.textContent = model;
+                aiBubble.modelTag.classList.remove('hidden');
+            }
+            aiBubble.textDiv.innerHTML = marked.parse(preprocessMath(text));
+            if (window.MathJax) {
+                console.log('渲染静态 AI 消息的公式');
+                MathJax.typesetPromise([aiBubble.textDiv]).catch(err => console.error('MathJax 渲染错误:', err));
+            }
+            aiBubble.actionBar.classList.remove('opacity-0');
+            
+            // 绑定历史记录加载时的复制事件
+            aiBubble.copyBtn.onclick = () => copyToClipboard(text, aiBubble.copyBtn);
+        }
+
+        function createAIMessageSkeleton() {
+            const msgDiv = document.createElement('div');
+            // 添加了 group 类名，用于更自然地展示 action-bar
+            msgDiv.className = `flex gap-3.5 w-full message-enter msg-ai mb-6 group`;
+            msgDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-inner border border-indigo-200 bg-indigo-50 mt-1">
+                    <i data-lucide="bot" class="text-indigo-600 w-4 h-4"></i>
+                </div>
+                <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+                    <div class="flex items-center gap-2 px-1">
+                        <span class="text-[13px] font-semibold text-slate-700">EduMate</span>
+                        <span id="ai-model-tag" class="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 hidden border border-slate-200"></span>
+                    </div>
+                    <div class="max-w-full rounded-2xl rounded-tl-sm px-4 py-3 bg-white border border-slate-100/80 shadow-sm text-slate-800 min-h-[48px] prose transition-all duration-300 hover:shadow-md">
+                        <div id="ai-loading" class="flex items-center gap-1 h-5 px-1">
+                            <div class="w-1.5 h-1.5 bg-indigo-400 rounded-full typing-dot"></div>
+                            <div class="w-1.5 h-1.5 bg-indigo-400 rounded-full typing-dot"></div>
+                            <div class="w-1.5 h-1.5 bg-indigo-400 rounded-full typing-dot"></div>
+                        </div>
+                        <div id="ai-text-final" class="hidden"></div>
+                    </div>
+                    <div id="ai-action-bar" class="flex items-center gap-0.5 mt-0.5 text-slate-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                        <button class="copy-btn p-1.5 hover:text-indigo-600 hover:bg-slate-200 rounded-lg transition-colors" title="复制回答"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+                        <button class="p-1.5 hover:text-indigo-600 hover:bg-slate-200 rounded-lg transition-colors" title="点赞"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                </div>
+            `;
+            chatContainer.querySelector('.max-w-4xl').insertBefore(msgDiv, document.getElementById('bottom-spacer'));
+            lucide.createIcons();
+            scrollToBottom();
+            
+            return {
+                textDiv: msgDiv.querySelector('#ai-text-final'),
+                loadingDiv: msgDiv.querySelector('#ai-loading'),
+                modelTag: msgDiv.querySelector('#ai-model-tag'),
+                actionBar: msgDiv.querySelector('#ai-action-bar'),
+                copyBtn: msgDiv.querySelector('.copy-btn') // 抓取复制按钮DOM节点
+            };
+        }
+
+        async function fetchAIResponse(userText) {
+            const aiBubble = createAIMessageSkeleton();
+
+            try {
+                const payload = {
+                    question: userText,
+                    model: uiModelToBackend(currentModel),
+                };
+                const response = await fetch(API_BASE_URL + '/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: token,
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.status === 401) {
+                    const det = data.detail;
+                    const msg = typeof det === 'string' ? det : (det && JSON.stringify(det)) || '登录已失效，请重新登录';
+                    alert(msg);
+                    localStorage.removeItem('token');
+                    token = null;
+                    authOverlay.classList.remove('hidden');
+                    authOverlay.classList.add('flex');
+                    aiBubble.loadingDiv.style.display = 'none';
+                    aiBubble.textDiv.classList.remove('hidden');
+                    aiBubble.textDiv.innerHTML = `<span class="text-amber-600 text-sm">${msg}</span>`;
+                    return;
+                }
+
+                if (!response.ok) {
+                    const errText =
+                        (typeof data.detail === 'string' && data.detail) ||
+                        data.message ||
+                        `HTTP ${response.status}`;
+                    throw new Error(errText);
+                }
+
+                aiBubble.loadingDiv.style.display = 'none';
+                aiBubble.textDiv.classList.remove('hidden');
+
+                if (data.model_used) {
+                    aiBubble.modelTag.textContent = backendModelToDisplay(data.model_used);
+                    aiBubble.modelTag.classList.remove('hidden');
+                }
+
+                const fullAnswer = data.answer != null ? String(data.answer) : '';
+                await typeWriterEffect(aiBubble.textDiv, fullAnswer);
+                
+                aiBubble.actionBar.classList.remove('opacity-0');
+                
+                // 绑定新生成回答的复制事件 (打字机特效结束后绑定)
+                aiBubble.copyBtn.onclick = () => copyToClipboard(fullAnswer, aiBubble.copyBtn);
+                
+                pushMessageToHistory(fullAnswer, 'ai', backendModelToDisplay(data.model_used));
+
+            } catch (error) {
+                aiBubble.loadingDiv.style.display = 'none';
+                aiBubble.textDiv.classList.remove('hidden');
+                aiBubble.textDiv.innerHTML = `<span class="text-red-500 text-sm">请求失败：${error.message || '请检查后端是否已启动。'}</span>`;
+            }
+        }
+
+        function typeWriterEffect(element, text) {
+            return new Promise((resolve) => {
+                let i = 0;
+                element.innerHTML = "";
+                const interval = setInterval(() => {
+                    const currentText = text.substring(0, i);
+                    element.innerHTML = marked.parse(preprocessMath(currentText));
+                    i += 3;
+                    if (chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 150) {
+                         scrollToBottom(false);
+                    }
+                    if (i > text.length) {
+                        element.innerHTML = marked.parse(preprocessMath(text));
+                        if (window.MathJax) {
+                            console.log('打字机效果完成，渲染公式');
+                            MathJax.typesetPromise([element]).catch(err => console.error('MathJax 渲染错误:', err));
+                        }
+                        clearInterval(interval);
+                        resolve();
+                    }
+                }, 15);
+            });
+        }
+
+        function scrollToBottom(smooth = true) {
+            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+        }
+    </script>
+</body>
+</html>
