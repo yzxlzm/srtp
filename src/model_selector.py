@@ -44,7 +44,7 @@ class ModelSelector:
 
         # 1. 检测是否需要推理能力
         if any(kw in q for kw in ModelSelector.MECHINE_LEARNING_KEYWORDS):
-            return "qwen_lora"
+            return "qwen-lora"
         if any(kw in q for kw in ModelSelector.REASONING_KEYWORDS):
             # 包含数学符号或代码块
             if re.search(r'[+\-*/=<>]|\d+|```|`', question):

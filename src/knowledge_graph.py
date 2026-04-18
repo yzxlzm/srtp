@@ -19,8 +19,8 @@ try:
 except ImportError:
     HAS_NETWORKX = False
 
-from llm import get_llm
-from rag_pipeline import load_docs, load_docx
+from .llm import get_llm
+from .rag_pipeline import load_docs, load_docx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
@@ -1228,4 +1228,3 @@ def build_kg_rag_chain(kg: KnowledgeGraph = None, kg_type: str = "ml_full"):
         return generate_answer_from_kg(kg, question, llm)
     
     return kg_rag_chain
-

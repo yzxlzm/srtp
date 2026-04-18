@@ -16,9 +16,9 @@ try:
 except ImportError:
     DocxDocument = None
 
-from llm import get_llm
-from embeddings import get_embeddings
-from vectorstore import build_vectorstore, load_vectorstore, save_vectorstore
+from src.llm import get_llm
+from src.embeddings import get_embeddings
+from src.vectorstore import build_vectorstore, load_vectorstore, save_vectorstore
 
 
 def load_docx(file_path: Path) -> List[Document]:

@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import sys
 import os
 from pathlib import Path
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel
 import torch
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -21,9 +19,10 @@ from crud.users import get_user_by_username, create_user, create_token, authenti
 from schemes.users import UserRequest
 from utils.response import success_response
 from utils.auth import get_current_user
-
+from src.llm import get_llm,pre_load_qwen_lora
 app = FastAPI()
 
+# 先允许所有跨域，后续可根据需要调整为更严格的配置
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -153,119 +152,39 @@ def get_knowledge_graph(kg_type: str = "ml_full"):
     
     return _kg_cache.get(kg_type)
 
-def get_local_model(model_name: str):
-    '''
-    利用HF Hub 加载模型 并挂载lora权重
-    Args:
-        model_name: 模型名称
-    Returns:
-        model: 模型对象
-    '''
-    lora_path = "qwen_lora_ml"
-    if os.path.exists(lora_path):
-        try:
-            print("正在挂载lora权重...")
-            model = AutoModelForCausalLM.from_pretrained(model_name)
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            model = PeftModel.from_pretrained(model, lora_path, device_map="auto", torch_dtype=torch.float16)
-            print("lora权重挂载完成")
-        except Exception as e:
-            print(f"挂载lora权重失败: {e}")
-            print(f'使用原始模型')
-            try:
-                model = model.to_chat_model(tokenizer=tokenizer)
-                return model, tokenizer
-            except Exception as e:
-                raise NotImplementedError(f"本地模型调用失败: {e}")
-    else:
-        print("lora权重不存在，使用原始模型")
-        try:
-            model = AutoModelForCausalLM.from_pretrained(model_name)
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            return model, tokenizer
-        except Exception as e:
-            raise NotImplementedError(f"本地模型调用失败: {e}")
-
-def get_llm_answer(model_key: Optional[str], answer_builder: Callable):
-    """
-    统一模型调用入口：区分 API 大模型和本地 LoRA 模型，
-    并通过 answer_builder(llm) 返回最终答案。
-
-    Args:
-        model_key: 模型 key（如 deepseek-chat / qwen_lora / openai-gpt-4o-mini）
-        answer_builder: 接收 llm 并返回答案的函数
-    """
-    from src.llm import get_llm
-
-    if model_key == "qwen_lora":
-        model, tokenizer = get_local_model(model_name="Qwen/Qwen3.5-4B")
-
-        class _LocalInvokeResult:
-            def __init__(self, content: str):
-                self.content = content
-
-        class _LocalLoraLLM:
-            """最小兼容适配器：提供 invoke(messages) -> .content"""
-
-            def __init__(self, local_model, local_tokenizer):
-                self.model = local_model
-                self.tokenizer = local_tokenizer
-
-            def _to_chat_messages(self, messages):
-                if not isinstance(messages, list):
-                    return [{"role": "user", "content": str(messages)}]
-                normalized = []
-                for msg in messages:
-                    role = "user"
-                    msg_type = getattr(msg, "type", "")
-                    if msg_type == "system":
-                        role = "system"
-                    elif msg_type in ("ai", "assistant"):
-                        role = "assistant"
-                    content = getattr(msg, "content", str(msg))
-                    normalized.append({"role": role, "content": str(content)})
-                return normalized
-
-            def invoke(self, messages):
-                chat_messages = self._to_chat_messages(messages)
-                prompt = self.tokenizer.apply_chat_template(
-                    chat_messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
-                inputs = self.tokenizer(prompt, return_tensors="pt")
-                model_device = next(self.model.parameters()).device
-                inputs = {k: v.to(model_device) for k, v in inputs.items()}
-                input_len = inputs["input_ids"].shape[-1]
-                with torch.no_grad():
-                    output_ids = self.model.generate(
-                        **inputs,
-                        max_new_tokens=1024,
-                        do_sample=True,
-                        top_p=0.9,
-                        temperature=0.7,
-                        repetition_penalty=1.05,
-                        eos_token_id=self.tokenizer.eos_token_id,
-                        pad_token_id=self.tokenizer.eos_token_id,
-                    )
-                gen_ids = output_ids[0][input_len:]
-                text = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
-                return _LocalInvokeResult(text)
-
-        llm = _LocalLoraLLM(model, tokenizer)
-    else:
-        llm = get_llm(model=model_key)
-    return answer_builder(llm)
-
 @app.on_event("startup")
 async def preload_model():
     '''
     启动时预加载模型
     '''
     print("正在预加载本地模型...")
-    model,tokenizer = get_local_model(model_name="Qwen/Qwen3.5-4B")
-    print("本地模型预加载完成")
-    return model,tokenizer
+    try:
+        # 现在的 get_llm 返回的是单个 LocalLLMWrapper 对象，直接获取即可，不需要解包
+        _ = get_llm(model="qwen-lora")
+        
+        global local_model, tokenizer
+        local_model, tokenizer = pre_load_qwen_lora()
+        print("本地模型预加载完成")
+    except Exception as e:
+        print(f"本地模型预加载跳过或失败: {e}")
+
+def get_llm_answer(model_key: Optional[str], answer_builder: Callable):
+    """
+    统一模型调用入口。
+    由于 llm.py 已经将本地模型和 API 模型统一封装为了具备 .invoke() 的对象，
+    这里无需再区分模型类型，直接获取并调用即可。
+
+    Args:
+        model_key: 模型 key（如 deepseek-chat / qwen-lora / openai-gpt-4o-mini）
+        answer_builder: 接收 llm 并返回答案的函数
+    """
+    
+    if model_key == 'qwen-lora':
+        llm = get_llm(model=model_key, local_model=local_model, tokenizer=tokenizer)
+    else:
+        llm = get_llm(model=model_key)
+    return answer_builder(llm)
+   
 
 
 @app.on_event("startup")
@@ -347,7 +266,11 @@ async def query(
         from src.knowledge_graph import hybrid_kg_rag_answer
 
         # 自动选择模型
-        selected_model = ModelSelector.select_model(q.question, q.model)
+        if q.model and q.model != "auto":
+            selected_model = q.model
+        else:
+            # 只有前端选了“自动选择(auto)”，才让路由器介入
+            selected_model = ModelSelector.select_model(q.question, q.model)
         answer = get_llm_answer(
             selected_model,
             lambda llm: hybrid_kg_rag_answer(q.question, kg, vectorstore, llm=llm),

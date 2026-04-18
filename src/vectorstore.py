@@ -4,7 +4,7 @@ from typing import Iterable, Optional
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
-from embeddings import get_embeddings
+from src.embeddings import get_embeddings
 
 
 def build_vectorstore(docs: Iterable[Document], embeddings: Optional[object] = None) -> FAISS:

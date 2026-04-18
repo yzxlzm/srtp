@@ -3,7 +3,7 @@
 运行：python src/build_ml_kg.py
 """
 
-from knowledge_graph import build_ml_full_kg
+from src.knowledge_graph import build_ml_full_kg
 
 
 def main():

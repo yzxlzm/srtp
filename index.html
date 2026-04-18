@@ -194,25 +194,22 @@
         lucide.createIcons();
         marked.setOptions({ breaks: true, gfm: true });
 
-        // 从 FastAPI 根路径打开时用同源；本地 file:// 打开时回落到默认后端地址
         const API_BASE_URL = (() => {
             if (typeof window === 'undefined') return 'http://127.0.0.1:8000';
             if (window.location.protocol === 'file:') return 'http://127.0.0.1:8000';
             return window.location.origin;
         })();
 
-        /** 前端筛选按钮 -> 后端 llm.MODEL_SELECTOR / query 使用的 model key */
         function uiModelToBackend(ui) {
             if (!ui || ui === 'auto') return null;
             const map = {
                 deepseek: 'deepseek-chat',
-                qwen: 'qwen_lora',
+                qwen: 'qwen-lora',
                 GPT: 'openai-gpt-4o-mini',
             };
             return map[ui] ?? ui;
         }
 
-        /** 后端返回的 model_used 展示名 */
         function backendModelToDisplay(key) {
             if (key == null || key === '') return '自动';
             const map = {
@@ -220,7 +217,7 @@
                 'deepseek-reasoner': 'DeepSeek 推理',
                 'openai-gpt-4o-mini': 'GPT',
                 'openai-gpt-4o': 'GPT-4o',
-                qwen_lora: 'Qwen (本地)',
+                'qwen-lora': 'Qwen (本地)',
             };
             return map[key] || key;
         }
@@ -245,17 +242,9 @@
         const currentModelDisplay = document.getElementById('current-model-name-display');
         const historyContainer = document.getElementById('history-items-container');
 
-        // 预处理数学公式格式
         function preprocessMath(text) {
-            console.log('原始文本:', text.substring(0, 200));
-
-            // 将 \[ ... \] 转换为 $$ ... $$
             text = text.replace(/\\\[/g, '$$').replace(/\\\]/g, '$$');
-
-            // 将 \( ... \) 转换为 $ ... $
             text = text.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
-
-            console.log('处理后文本:', text.substring(0, 200));
             return text;
         }
 
@@ -270,20 +259,15 @@
             }
         };
 
-        // 【新增】：全局复制功能核心逻辑
         async function copyToClipboard(text, btnElement) {
             try {
-                // 调用浏览器原生剪贴板 API
                 await navigator.clipboard.writeText(text);
-                
-                // 成功后的视觉反馈：变成绿色的勾
                 const icon = btnElement.querySelector('i');
                 const originalIcon = icon.getAttribute('data-lucide');
                 icon.setAttribute('data-lucide', 'check');
                 icon.classList.add('text-green-500');
                 lucide.createIcons();
                 
-                // 2 秒后恢复原来的复制图标
                 setTimeout(() => {
                     icon.setAttribute('data-lucide', originalIcon);
                     icon.classList.remove('text-green-500');
@@ -423,10 +407,8 @@
             renderHistoryList();
             scrollToBottom(false);
 
-            // 确保 MathJax 渲染所有公式
             setTimeout(() => {
                 if (window.MathJax) {
-                    console.log('触发 MathJax 重新渲染');
                     MathJax.typesetPromise().catch(err => console.error('MathJax 渲染错误:', err));
                 }
             }, 200);
@@ -475,7 +457,6 @@
             activeBtn.classList.remove('text-slate-600', 'hover:bg-white/50');
             activeBtn.classList.add('active-model', 'bg-white', 'text-indigo-700', 'shadow', 'font-medium');
             
-            // 【新增】：添加了 GPT 到模型名称字典中
             const modelNames = { 'auto': '自动选择', 'deepseek': 'DeepSeek', 'qwen': 'Qwen', 'GPT': 'GPT' };
             currentModelDisplay.textContent = modelNames[m];
             userInput.focus();
@@ -518,20 +499,14 @@
             fetchAIResponse(text);
         }
 
-        // ==========================================
-        // 【核心修改】：带有独立工具栏的用户气泡
-        // ==========================================
         function appendStaticUserMessage(text) {
             const msgContainer = document.createElement('div');
-            // group 类名用于控制鼠标悬浮时显示底部的工具栏
             msgContainer.className = "msg-user-anim msg-user group";
             msgContainer.style.cssText = "display: flex; flex-direction: row; justify-content: flex-end; align-items: flex-start; width: 100%; margin-bottom: 1.5rem;";
             
-            // 把气泡和工具栏包裹在一个垂直容器中
             const contentWrapper = document.createElement('div');
             contentWrapper.className = "flex flex-col items-end gap-1.5 max-w-[85%]";
             
-            // 纯净文本气泡 (保持高度锁定防拉伸)
             const bubble = document.createElement('div');
             bubble.style.cssText = "box-sizing: border-box; background-color: #2563eb; color: #ffffff; padding: 10px 18px; border-radius: 20px; border-top-right-radius: 4px; font-size: 15px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; height: auto !important; min-height: 0 !important; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); cursor: default;";
             bubble.textContent = text;
@@ -545,7 +520,6 @@
                 bubble.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.2)";
             };
 
-            // 用户工具栏 (默认透明，父级 hover 时渐显)
             const actionBar = document.createElement('div');
             actionBar.className = "flex items-center gap-1 text-slate-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100 mr-1";
             
@@ -554,7 +528,6 @@
             copyBtn.title = "复制我的消息";
             copyBtn.innerHTML = `<i data-lucide="copy" class="w-3.5 h-3.5"></i>`;
             
-            // 绑定用户文字的复制事件
             copyBtn.onclick = () => copyToClipboard(text, copyBtn);
             
             actionBar.appendChild(copyBtn);
@@ -567,9 +540,6 @@
             scrollToBottom();
         }
 
-        // ==========================================
-        // 【核心修改】：完善 AI 气泡的全局复制功能
-        // ==========================================
         function appendStaticAIMessage(text, model) {
             const aiBubble = createAIMessageSkeleton();
             aiBubble.loadingDiv.style.display = 'none';
@@ -580,18 +550,15 @@
             }
             aiBubble.textDiv.innerHTML = marked.parse(preprocessMath(text));
             if (window.MathJax) {
-                console.log('渲染静态 AI 消息的公式');
                 MathJax.typesetPromise([aiBubble.textDiv]).catch(err => console.error('MathJax 渲染错误:', err));
             }
             aiBubble.actionBar.classList.remove('opacity-0');
             
-            // 绑定历史记录加载时的复制事件
             aiBubble.copyBtn.onclick = () => copyToClipboard(text, aiBubble.copyBtn);
         }
 
         function createAIMessageSkeleton() {
             const msgDiv = document.createElement('div');
-            // 添加了 group 类名，用于更自然地展示 action-bar
             msgDiv.className = `flex gap-3.5 w-full message-enter msg-ai mb-6 group`;
             msgDiv.innerHTML = `
                 <div class="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-inner border border-indigo-200 bg-indigo-50 mt-1">
@@ -625,7 +592,7 @@
                 loadingDiv: msgDiv.querySelector('#ai-loading'),
                 modelTag: msgDiv.querySelector('#ai-model-tag'),
                 actionBar: msgDiv.querySelector('#ai-action-bar'),
-                copyBtn: msgDiv.querySelector('.copy-btn') // 抓取复制按钮DOM节点
+                copyBtn: msgDiv.querySelector('.copy-btn')
             };
         }
 
@@ -637,11 +604,14 @@
                     question: userText,
                     model: uiModelToBackend(currentModel),
                 };
-                const response = await fetch(API_BASE_URL + '/query', {
+                
+                const response = await fetch(API_BASE_URL + '/query?kg_type=ml_full', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        Authorization: token,
+                        // 【最终修复】：双重保险，同时带上 Authorization 和 token，兼容任何手写鉴权逻辑
+                        'Authorization': token,
+                        'token': token
                     },
                     body: JSON.stringify(payload),
                 });
@@ -683,7 +653,6 @@
                 
                 aiBubble.actionBar.classList.remove('opacity-0');
                 
-                // 绑定新生成回答的复制事件 (打字机特效结束后绑定)
                 aiBubble.copyBtn.onclick = () => copyToClipboard(fullAnswer, aiBubble.copyBtn);
                 
                 pushMessageToHistory(fullAnswer, 'ai', backendModelToDisplay(data.model_used));
@@ -709,7 +678,6 @@
                     if (i > text.length) {
                         element.innerHTML = marked.parse(preprocessMath(text));
                         if (window.MathJax) {
-                            console.log('打字机效果完成，渲染公式');
                             MathJax.typesetPromise([element]).catch(err => console.error('MathJax 渲染错误:', err));
                         }
                         clearInterval(interval);
